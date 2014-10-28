@@ -226,7 +226,8 @@ const char* GetOpName(opcodetype opcode)
     case OP_NOP9                   : return "OP_NOP9";
     case OP_NOP10                  : return "OP_NOP10";
 
-
+    // Automatic Transaction
+    case OP_CHECKSTATE             : return "OP_CHECKSTATE";
 
     // template matching params
     case OP_PUBKEYHASH             : return "OP_PUBKEYHASH";
