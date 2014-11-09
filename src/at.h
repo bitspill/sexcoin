@@ -8,12 +8,6 @@
 
 #include <inttypes.h>
 
-//#include <boost/foreach.hpp>
-//#include <boost/variant.hpp>
-
-//#include "keystore.h"
-//#include "bignum.h"
-
 /*
   [State]
   0x00000000 ; flags (32 bits)
@@ -37,6 +31,26 @@ struct at_state {
  int64_t a_reg[4];
  int64_t b_reg[4];
 };
+
+/*
+    flags:
+        (1<<32) Reserved
+        (1<<31) Reserved
+        (1<<30) A register is zero
+        (1<<29) B register is zero
+        (1<<28) Execution is paused (continue from last executed)
+        (1<<27) Execution is stopped (start again from beginning)
+        (1<<26) Execution is terminated (does not run again)
+        (1<<25) Reserved
+        (1<<24) ... (1<<1)
+        (1<<0)  Reserved
+ */
+#define flag_a_zero         (1<<30)
+#define flag_b_zero         (1<<29)
+#define flag_paused         (1<<28)
+#define flag_stopped        (1<<27)
+#define flag_terminated     (1<<26)
+
 
 enum at_op_code
 {
