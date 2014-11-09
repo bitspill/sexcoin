@@ -28,8 +28,8 @@ struct at_state {
  int32_t pcs;
  int32_t sleep_until;
  int64_t stopped_at;
- int64_t a_reg[4];
- int64_t b_reg[4];
+ int64_t a1,a12,a3,a4;
+ int64_t b1,b2,b3,b4;
 };
 
 /*
