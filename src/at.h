@@ -3,10 +3,31 @@
 #ifndef H_BITCOIN_AT
 #define H_BITCOIN_AT
 
+#include <cstdlib>
+#include <memory.h>
+
+#ifndef _WIN32
+#  include <stdint.h>
+#else
+#  ifdef _MSC_VER
+typedef __int8 int8_t;
+typedef __int16 int16_t;
+typedef __int32 int32_t;
+typedef __int64 int64_t;
+#  endif
+#endif
+
+#include <map>
+#include <set>
+#include <deque>
+#include <memory>
 #include <string>
 #include <vector>
-
-#include <inttypes.h>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <iostream>
+#include <stdexcept>
 
 /*
   [State]
@@ -21,20 +42,46 @@
   0x0000000000000000000000000000000000000000000000000000000000000000 ; pseudo register B (256 bits)
 */
 struct at_state {
- int32_t flags;
- int32_t pc;
- int32_t cs;
- int32_t us;
- int32_t pcs;
- int32_t sleep_until;
- int64_t stopped_at;
- int64_t a1,a12,a3,a4;
- int64_t b1,b2,b3,b4;
+    int32_t flags;
+    int32_t pc;
+    int32_t cs;
+    int32_t us;
+    int32_t pcs;
+    int32_t sleep_until;
+    int64_t stopped_at;
+    int64_t a1,a12,a3,a4;
+    int64_t b1,b2,b3,b4;
+    set< int32_t > jumps; // transient
+
+    // helpful for debugging
+    int32_t opc;
+    int32_t steps;
+
+    at_state( )
+    {
+        // ToDo: What was 'pcs'?
+        reset( );
+    }
+
+    void reset( )
+    {
+        pc = 0;
+        opc = 0;
+
+        cs = 0;
+        us = 0;
+
+        steps = 0;
+
+        jumps.clear( );
+
+        stopped = false;
+        finished = false;
+    }
 };
 
 /*
     flags:
-        (1<<32) Reserved
         (1<<31) Reserved
         (1<<30) A register is zero
         (1<<29) B register is zero
@@ -95,6 +142,38 @@ enum at_op_code
    at_op_code_EXT_FUN_RET = 0x35,
    at_op_code_EXT_FUN_RET_DAT = 0x36,
    at_op_code_EXT_FUN_RET_DAT_2 = 0x37,
+};
+
+struct at_header {
+    int16_t version;
+    int16_t reserved;
+    int16_t code_pages; // (number of 256 byte pages required)
+    int16_t data_pages; // (number of 256 byte pages required)
+    int16_t call_stack; // (number of 256 byte pages required)
+    int16_t user_stack; // (number of 256 byte pages required)
+};
+
+class AutomatedTransaction {
+    AutomatedTransaction();
+    int64_t get_function_data( int32_t func_num );
+    int64_t func( int32_t func_num );
+    int64_t func1( int32_t func_num, int64_t value);
+    int64_t func2( int32_t func_num, int64_t value1, int64_t value2);
+    int get_fun( int16_t& fun );
+    int get_val( int64_t& val );
+    int get_addr( int32_t& addr, bool is_code = false );
+    int get_addrs( int32_t& addr1, int32_t& addr2 );
+    int get_addr_val( int32_t& addr, int64_t& val );
+    int get_addr_off( int32_t& addr, int8_t& off );
+    int get_addrs_off( int32_t& addr1, int32_t& addr2, int8_t& off );
+    int get_fun_addr( int16_t& fun, int32_t& addr );
+    int get_fun_addrs( int16_t& fun, int32_t& addr1, int32_t& addr2 );
+    int process_op( bool disassemble, bool determine_jumps);
+    void dump_state(const machine_state &state);
+    void dump_bytes(int8_t *p_bytes, int num);
+    void list_code(bool determine_jumps = false);
+    bool check_has_balance();
+    void reset_machine();
 };
 
 #endif
