@@ -27,6 +27,11 @@ typedef __int64 int64_t;
 #include <iostream>
 #include <stdexcept>
 
+const int32_t c_code_page_bytes = 512;
+const int32_t c_data_page_bytes = 512;
+
+const int32_t c_call_stack_page_bytes = 256;
+const int32_t c_user_stack_page_bytes = 256;
 
 // TODO FIX THIS!!! (Currently just appeasing the editor warnings)
 typedef int int8_t;
@@ -40,6 +45,7 @@ using namespace std;
 
 
 class AutomatedTransaction {
+private:
     at_state _state;
     int8_t *_code;
     int32_t _code_size;
@@ -48,7 +54,7 @@ class AutomatedTransaction {
     int32_t _call_stack_size;
     int32_t _user_stack_size;
 
-
+public:
     AutomatedTransaction(int8_t* p_code, int32_t csize, int8_t* p_data, int32_t dsize, int32_t cssize, int32_t ussize) {
         _state.reset();
         _code = p_code;
@@ -57,155 +63,6 @@ class AutomatedTransaction {
         _data_size = dsize;
         _call_stack_size = cssize;
         _user_stack_size = ussize;
-    }
-
-
-    struct function_data
-    {
-        function_data( )
-        {
-            loop = false;
-            offset = 0;
-        }
-
-        bool loop;
-        size_t offset;
-
-        vector< int64_t > data;
-    };
-
-    map< int32_t, function_data > g_function_data;
-
-    int64_t get_function_data( int32_t func_num )
-    {
-        if( func_num == g_increment_func )
-        {
-            if( g_first_call )
-                g_first_call = false;
-            else
-            {
-                for( map< int32_t, function_data >::iterator i = g_function_data.begin( ); i != g_function_data.end( ); ++i )
-                {
-                    if( ++( i->second.offset ) >= i->second.data.size( ) )
-                    {
-                        if( i->second.loop )
-                            i->second.offset = 0;
-                        else
-                            --( i->second.offset );
-                    }
-                }
-            }
-        }
-
-        int64_t rc = g_function_data[ func_num ].data[ g_function_data[ func_num ].offset ];
-
-        return rc;
-    }
-
-    int64_t func( int32_t func_num )
-    {
-        int64_t rc = 0;
-
-        if (func_num == 1)
-            rc = g_val;
-        else if (func_num == 2) // get a value
-        {
-            if (g_val == 9)
-                rc = g_val = 0;
-            else
-                rc = ++g_val;
-        }
-        else if (func_num == 3) // get size
-            rc = 10;
-        else if (func_num == 4) // get func num
-            rc = func_num;
-        else if (func_num == 25 || func_num == 32) // get balance (prior)
-        {
-            rc = g_balance;
-            if (g_function_data.count(func_num)) {
-                cout << "(resetting function data)\n";
-                g_first_call = true;
-                for (map<int32_t, function_data>::iterator i = g_function_data.begin(); i != g_function_data.end(); ++i)
-                    i->second.offset = 0;
-            }
-        }
-        else if (g_function_data.count(func_num))
-            rc = get_function_data(func_num);
-
-        if (func_num != 2) {
-            if (func_num < 0x100)
-                cout << "func: " << dec << func_num << " rc: " << hex << setw(16) << setfill('0') << rc << '\n';
-            else
-                cout << "func: 0x" << hex << setw(4) << setfill('0')
-                        << func_num << " rc: 0x" << hex << setw(16) << setfill('0') << rc << '\n';
-        }
-
-        return rc;
-    }
-
-    int64_t func1( int32_t func_num, int64_t value)
-    {
-        int64_t rc = 0;
-
-        if( func_num == 1 ) // echo
-            cout << dec << value << '\n';
-        else if( func_num == 2 )
-            rc = value * 2; // double it
-        else if( func_num == 3 )
-            rc = value / 2; // halve it
-        else if( func_num == 26 || func_num == 33 ) // pay balance (prior)
-        {
-            cout << "payout " << dec << g_balance << " to account: " << value << '\n';
-            g_balance = 0;
-        }
-        else if( g_function_data.count( func_num ) )
-            rc = get_function_data( func_num );
-
-        if( func_num != 1 && func_num != 26 )
-        {
-            if( func_num < 0x100 )
-                cout << "func1: " << dec << func_num << " with " << value
-                        << " rc: " << hex << setw( 16 ) << setfill( '0' ) << rc << '\n';
-            else
-                cout << "func1: " << hex << setw( 4 ) << setfill( '0' ) << func_num
-                        << " with " << value << " rc: 0x" << hex << setw( 16 ) << setfill( '0' ) << rc << '\n';
-        }
-
-        return rc;
-    }
-
-    int64_t func2( int32_t func_num, int64_t value1, int64_t value2)
-    {
-        int64_t rc = 0;
-
-        if( func_num == 2 )
-            rc = value1 * value2; // multiply values
-        else if( func_num == 3 )
-            rc = value1 / value2; // divide values
-        else if( func_num == 4 )
-            rc = value1 + value2; // sum values
-        else if( func_num == 31 ) // send amount to address
-        {
-            if( value1 > g_balance )
-                value1 = g_balance;
-
-            cout << "payout " << dec << value1 << " to account: " << hex << setw( 8 ) << setfill( '0' ) << value2 << '\n';
-            g_balance -= value1;
-        }
-        else if( g_function_data.count( func_num ) )
-            rc = get_function_data( func_num );
-
-        if( func_num != 31 )
-        {
-            if( func_num < 0x100 )
-                cout << "func2: " << dec << func_num << " with " << value1
-                        << " and " << value2 << " rc: " << hex << setw( 16 ) << setfill( '0' ) << rc << '\n';
-            else
-                cout << "func2: 0x" << hex << setw( 4 ) << setfill( '0' ) << func_num << " with " << value1
-                        << " and " << value2 << " rc: 0x" << hex << setw( 16 ) << setfill( '0' ) << rc << '\n';
-        }
-
-        return rc;
     }
 
     int get_fun( int16_t& fun )
@@ -357,7 +214,7 @@ class AutomatedTransaction {
         }
     }
 
-    int process_op( bool disassemble, bool determine_jumps)
+    int process_op( bool disassemble = false, bool determine_jumps = false)
     {
         int rc = 0;
 
@@ -1096,42 +953,20 @@ class AutomatedTransaction {
         for (map<int32_t, function_data>::iterator i = g_function_data.begin(); i != g_function_data.end(); ++i)
             i->second.offset = 0;
     }
+
+    bool isFinished(){
+        return _state.flags |= flag_terminated;
+    }
+    bool isStopped(){
+        return _state.flags |= flag_stopped;
+    }
+    bool isPaused(){
+        return _state.flags |= flag_paused;
+    }
 };
 
 
 // The following is for debug/testing
-const int32_t c_code_page_bytes = 512;
-const int32_t c_data_page_bytes = 512;
-
-const int32_t c_call_stack_page_bytes = 256;
-const int32_t c_user_stack_page_bytes = 256;
-
-int32_t g_code_pages = 1;
-int32_t g_data_pages = 1;
-
-int32_t g_call_stack_pages = 1;
-int32_t g_user_stack_pages = 1;
-
-const int64_t c_default_balance = 100;
-
-int64_t g_val = 0;
-int64_t g_val1 = 0;
-
-int64_t g_balance = c_default_balance;
-
-bool g_first_call = true;
-
-int32_t g_increment_func = 0;
-
-bool check_has_balance()
-{
-    if (g_balance == 0) {
-        cout << "(stopped - zero balance)\n";
-        return false;
-    }
-    else
-        return true;
-}
 
 int main()
 {
