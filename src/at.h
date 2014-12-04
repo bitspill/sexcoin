@@ -168,7 +168,7 @@ class AutomatedTransaction {
     int get_addrs_off( int32_t& addr1, int32_t& addr2, int8_t& off );
     int get_fun_addr( int16_t& fun, int32_t& addr );
     int get_fun_addrs( int16_t& fun, int32_t& addr1, int32_t& addr2 );
-    int process_op( bool disassemble, bool determine_jumps);
+    int process_op( bool disassemble = false, bool determine_jumps= false);
     void dump_state(const machine_state &state);
     void dump_bytes(int8_t *p_bytes, int num);
     void list_code(bool determine_jumps = false);
