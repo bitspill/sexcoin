@@ -33,11 +33,6 @@ const int32_t c_data_page_bytes = 512;
 const int32_t c_call_stack_page_bytes = 256;
 const int32_t c_user_stack_page_bytes = 256;
 
-// TODO FIX THIS!!! (Currently just appeasing the editor warnings)
-typedef int int8_t;
-typedef int int16_t;
-typedef int int32_t;
-typedef int int64_t;
 
 #include "at.h"
 
