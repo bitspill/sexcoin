@@ -5,18 +5,6 @@
 
 using namespace std;
 
-class ATManager
-{
-private:
-    vector<AutomatedTransaction> at_collection;
-
-public:
-    bool addAT(AutomatedTransaction);
-    void singleStepAll();
-    void fullStepAll();
-    void removeFinished();
-};
-
 bool ATManager::addAT(/* some info extracted from a transaction */) {
     // AutomatedTransaction at = new AutomatedTransaction(int8_t* p_code, int32_t csize, int8_t* p_data, int32_t dsize, int32_t cssize, int32_t ussize);
     return false;
