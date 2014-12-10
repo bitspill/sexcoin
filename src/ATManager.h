@@ -1,7 +1,10 @@
+#include <vector>
+#include "at.h"
+
 class ATManager
 {
 private:
-    vector<AutomatedTransaction> at_collection;
+    std::vector<AutomatedTransaction> at_collection;
 
 public:
     bool addAT(AutomatedTransaction);
