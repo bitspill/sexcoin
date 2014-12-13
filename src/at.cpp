@@ -1,5 +1,6 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+#include "at.h"
 
 #include <cstdlib>
 #include <memory.h>
@@ -39,930 +40,895 @@ const int32_t c_user_stack_page_bytes = 256;
 using namespace std;
 
 
-class AutomatedTransaction {
-private:
-    at_state _state;
-    int8_t *_code;
-    int32_t _code_size;
-    int8_t *_data;
-    int32_t _data_size;
-    int32_t _call_stack_size;
-    int32_t _user_stack_size;
+AutomatedTransaction::AutomatedTransaction(int8_t *p_code, int32_t csize, int8_t *p_data, int32_t dsize, int32_t cssize, int32_t ussize) {
+    _state.reset();
+    _code = p_code;
+    _code_size = csize;
+    _data = p_data;
+    _data_size = dsize;
+    _call_stack_size = cssize;
+    _user_stack_size = ussize;
+}
 
-public:
-    AutomatedTransaction(int8_t* p_code, int32_t csize, int8_t* p_data, int32_t dsize, int32_t cssize, int32_t ussize) {
-        _state.reset();
-        _code = p_code;
-        _code_size = csize;
-        _data = p_data;
-        _data_size = dsize;
-        _call_stack_size = cssize;
-        _user_stack_size = ussize;
-    }
-
-    int get_fun( int16_t& fun )
-    {
-        if( _state.pc + ( int32_t )(sizeof( int16_t )) >= _code_size )
+int AutomatedTransaction::get_fun(int16_t &fun) {
+    if (_state.pc + (int32_t) (sizeof(int16_t)) >= _code_size)
         return -1;
-        else
-        {
-            fun = *( int16_t* )( _code + _state.pc + 1 );
+    else {
+        fun = *(int16_t *) (_code + _state.pc + 1);
 
-            return 0;
-        }
+        return 0;
     }
+}
 
-    int get_val( int64_t& val )
-    {
-        if( _state.pc + ( int32_t )(sizeof( int64_t )) >= _code_size )
+int AutomatedTransaction::get_val(int64_t &val) {
+    if (_state.pc + (int32_t) (sizeof(int64_t)) >= _code_size)
         return -1;
-        else
-        {
-            val = *( int64_t* )( _code + _state.pc + 1 );
+    else {
+        val = *(int64_t *) (_code + _state.pc + 1);
 
-            return 0;
-        }
+        return 0;
     }
+}
 
-    int get_addr( int32_t& addr, bool is_code = false )
-    {
-        if( _state.pc + ( int32_t )(sizeof( int32_t )) >= _code_size )
+int AutomatedTransaction::get_addr(int32_t &addr, bool is_code = false) {
+    if (_state.pc + (int32_t) (sizeof(int32_t)) >= _code_size)
         return -1;
-        else
-        {
-            addr = *( int32_t* )( _code + _state.pc + 1 );
+    else {
+        addr = *(int32_t *) (_code + _state.pc + 1);
 
-            if( addr < 0 || ( is_code && addr >= _code_size ) )
-                return -1;
-            else if( !is_code && ( ( addr * 8 ) < 0 || ( addr * 8 ) + ( int32_t )(sizeof( int64_t )) > _data_size ) )
+        if (addr < 0 || (is_code && addr >= _code_size))
             return -1;
-            else
-            return 0;
-        }
-    }
-
-    int get_addrs( int32_t& addr1, int32_t& addr2 )
-    {
-        if( _state.pc + ( int32_t )(sizeof( int32_t )) + ( int32_t )(sizeof( int32_t )) >= _code_size )
-        return -1;
-        else
-        {
-            addr1 = *( int32_t* )( _code + _state.pc + 1 );
-            addr2 = *( int32_t* )( _code + _state.pc + 1 + sizeof( int32_t ) );
-
-            if( addr1 < 0 || addr2 < 0
-                    || ( addr1 * 8 ) < 0 || ( addr2 * 8 ) < 0
-                    || ( addr1 * 8 ) + ( int32_t )sizeof( int64_t ) > _data_size
-                        || ( addr2 * 8 ) + ( int32_t )sizeof( int64_t ) > _data_size )
-            return -1;
-            else
-            return 0;
-        }
-    }
-
-    int get_addr_off( int32_t& addr, int8_t& off )
-    {
-        if( _state.pc + ( int32_t )(sizeof( int32_t )) + ( int32_t )(sizeof( int8_t )) >= _code_size )
-        return -1;
-        else
-        {
-            addr = *( int32_t* )( _code + _state.pc + 1 );
-            off = *( int8_t* )( _code + _state.pc + 1 + sizeof( int32_t ) );
-
-            if( addr < 0 || ( addr * 8 ) < 0
-                    || ( addr * 8 ) + ( int32_t )(sizeof( int64_t )) > _data_size || _state.pc + off >= _code_size )
-            return -1;
-            else
-            return 0;
-        }
-    }
-
-    int get_addrs_off( int32_t& addr1, int32_t& addr2, int8_t& off )
-    {
-        if( _state.pc + ( int32_t )(sizeof( int32_t )) + ( int32_t )(sizeof( int32_t )) + ( int32_t )(sizeof( int8_t )) >= _code_size )
-        return -1;
-        else
-        {
-            addr1 = *( int32_t* )( _code + _state.pc + 1 );
-            addr2 = *( int32_t* )( _code + _state.pc + 1 + sizeof( int32_t ) );
-            off = *( int8_t* )( _code + _state.pc + 1 + sizeof( int32_t ) + sizeof( int32_t ) );
-
-            if( addr1 < 0 || addr2 < 0
-                    || ( addr1 * 8 ) < 0 || ( addr2 * 8 ) < 0
-                    || ( addr1 * 8 ) + ( int32_t )(sizeof( int64_t )) > _data_size
-                        || ( addr2 * 8 ) + ( int32_t )(sizeof( int64_t )) > _data_size || _state.pc + off >= _code_size )
-            return -1;
-            else
-            return 0;
-        }
-    }
-
-    int get_fun_addr( int16_t& fun, int32_t& addr )
-    {
-        if( _state.pc + ( int32_t )(sizeof( int16_t )) + ( int32_t )(sizeof( int32_t )) >= _code_size )
-        return -1;
-        else
-        {
-            fun = *( int16_t* )( _code + _state.pc + 1 );
-            addr = *( int32_t* )( _code + _state.pc + 1 + sizeof( int16_t ) );
-
-            if( addr < 0 || ( addr * 8 ) < 0 || ( addr * 8 ) + ( int32_t )(sizeof( int64_t )) > _data_size )
-            return -1;
-            else
-            return 0;
-        }
-    }
-
-    int get_fun_addrs( int16_t& fun, int32_t& addr1, int32_t& addr2 )
-    {
-        if (_state.pc + (int32_t)(sizeof(int16_t))
-                + (int32_t)(sizeof(int32_t)) + (int32_t)(sizeof(int32_t)) >= _code_size)
-            return -1;
-        else {
-            fun = *(int16_t * )(_code + _state.pc + 1);
-            addr1 = *(int32_t * )(_code + _state.pc + 1 + sizeof(int16_t));
-            addr2 = *(int32_t * )(_code + _state.pc + 1 + sizeof(int16_t) + sizeof(int32_t));
-
-            if (addr1 < 0 || addr2 < 0
-                    || (addr1 * 8) < 0 || (addr2 * 8) < 0
-                    || (addr1 * 8) + (int32_t)(sizeof(int64_t)) > _data_size
-                    || (addr2 * 8) + (int32_t)(sizeof(int64_t)) > _data_size)
-                return -1;
-            else
-                return 0;
-        }
-    }
-
-    int get_addr_val( int32_t& addr, int64_t& val )
-    {
-        if( _state.pc + ( int32_t )sizeof( int32_t ) + ( int32_t )sizeof( int64_t ) >= _code_size )
+        else if (!is_code && ((addr * 8) < 0 || (addr * 8) + (int32_t) (sizeof(int64_t)) > _data_size))
             return -1;
         else
-        {
-            addr = *( int32_t* )( _code + _state.pc + 1 );
-            val = *( int64_t* )( _code + _state.pc + 1 + ( int32_t )sizeof( int32_t ) );
+            return 0;
+    }
+}
 
-            if( addr < 0 || ( addr * 8 ) < 0 || ( addr * 8 ) + ( int32_t )sizeof( int64_t ) > _data_size )
-                return -1;
-            else
-                return 0;
-        }
+int AutomatedTransaction::get_addrs(int32_t &addr1, int32_t &addr2) {
+    if (_state.pc + (int32_t) (sizeof(int32_t)) + (int32_t) (sizeof(int32_t)) >= _code_size)
+        return -1;
+    else {
+        addr1 = *(int32_t *) (_code + _state.pc + 1);
+        addr2 = *(int32_t *) (_code + _state.pc + 1 + sizeof(int32_t));
+
+        if (addr1 < 0 || addr2 < 0
+                || (addr1 * 8) < 0 || (addr2 * 8) < 0
+                || (addr1 * 8) + (int32_t) sizeof(int64_t) > _data_size
+                || (addr2 * 8) + (int32_t) sizeof(int64_t) > _data_size)
+            return -1;
+        else
+            return 0;
+    }
+}
+
+int AutomatedTransaction::get_addr_off(int32_t &addr, int8_t &off) {
+    if (_state.pc + (int32_t) (sizeof(int32_t)) + (int32_t) (sizeof(int8_t)) >= _code_size)
+        return -1;
+    else {
+        addr = *(int32_t *) (_code + _state.pc + 1);
+        off = *(int8_t *) (_code + _state.pc + 1 + sizeof(int32_t));
+
+        if (addr < 0 || (addr * 8) < 0
+                || (addr * 8) + (int32_t) (sizeof(int64_t)) > _data_size || _state.pc + off >= _code_size)
+            return -1;
+        else
+            return 0;
+    }
+}
+
+int AutomatedTransaction::get_addrs_off(int32_t &addr1, int32_t &addr2, int8_t &off) {
+    if (_state.pc + (int32_t) (sizeof(int32_t)) + (int32_t) (sizeof(int32_t)) + (int32_t) (sizeof(int8_t)) >= _code_size)
+        return -1;
+    else {
+        addr1 = *(int32_t *) (_code + _state.pc + 1);
+        addr2 = *(int32_t *) (_code + _state.pc + 1 + sizeof(int32_t));
+        off = *(int8_t *) (_code + _state.pc + 1 + sizeof(int32_t) + sizeof(int32_t));
+
+        if (addr1 < 0 || addr2 < 0
+                || (addr1 * 8) < 0 || (addr2 * 8) < 0
+                || (addr1 * 8) + (int32_t) (sizeof(int64_t)) > _data_size
+                || (addr2 * 8) + (int32_t) (sizeof(int64_t)) > _data_size || _state.pc + off >= _code_size)
+            return -1;
+        else
+            return 0;
+    }
+}
+
+int AutomatedTransaction::get_fun_addr(int16_t &fun, int32_t &addr) {
+    if (_state.pc + (int32_t) (sizeof(int16_t)) + (int32_t) (sizeof(int32_t)) >= _code_size)
+        return -1;
+    else {
+        fun = *(int16_t *) (_code + _state.pc + 1);
+        addr = *(int32_t *) (_code + _state.pc + 1 + sizeof(int16_t));
+
+        if (addr < 0 || (addr * 8) < 0 || (addr * 8) + (int32_t) (sizeof(int64_t)) > _data_size)
+            return -1;
+        else
+            return 0;
+    }
+}
+
+int AutomatedTransaction::get_fun_addrs(int16_t &fun, int32_t &addr1, int32_t &addr2) {
+    if (_state.pc + (int32_t) (sizeof(int16_t))
+            + (int32_t) (sizeof(int32_t)) + (int32_t) (sizeof(int32_t)) >= _code_size)
+        return -1;
+    else {
+        fun = *(int16_t *) (_code + _state.pc + 1);
+        addr1 = *(int32_t *) (_code + _state.pc + 1 + sizeof(int16_t));
+        addr2 = *(int32_t *) (_code + _state.pc + 1 + sizeof(int16_t) + sizeof(int32_t));
+
+        if (addr1 < 0 || addr2 < 0
+                || (addr1 * 8) < 0 || (addr2 * 8) < 0
+                || (addr1 * 8) + (int32_t) (sizeof(int64_t)) > _data_size
+                || (addr2 * 8) + (int32_t) (sizeof(int64_t)) > _data_size)
+            return -1;
+        else
+            return 0;
+    }
+}
+
+int AutomatedTransaction::get_addr_val(int32_t &addr, int64_t &val) {
+    if (_state.pc + (int32_t) sizeof(int32_t) + (int32_t) sizeof(int64_t) >= _code_size)
+        return -1;
+    else {
+        addr = *(int32_t *) (_code + _state.pc + 1);
+        val = *(int64_t *) (_code + _state.pc + 1 + (int32_t) sizeof(int32_t));
+
+        if (addr < 0 || (addr * 8) < 0 || (addr * 8) + (int32_t) sizeof(int64_t) > _data_size)
+            return -1;
+        else
+            return 0;
+    }
+}
+
+int AutomatedTransaction::process_op(bool disassemble = false, bool determine_jumps = false) {
+    int rc = 0;
+
+    bool invalid = false;
+    bool had_overflow = false;
+
+    if (_code_size < 1 || _state.pc >= _code_size)
+        return 0;
+
+    if (determine_jumps)
+        _state.jumps.insert(_state.pc);
+
+    int8_t op = _code[_state.pc];
+
+    if (op && disassemble && !determine_jumps) {
+        cout << hex << setw(8) << setfill('0') << _state.pc;
+        if (_state.pc == _state.opc)
+            cout << "* ";
+        else
+            cout << "  ";
     }
 
-    int process_op( bool disassemble = false, bool determine_jumps = false)
-    {
-        int rc = 0;
-
-        bool invalid = false;
-        bool had_overflow = false;
-
-        if (_code_size < 1 || _state.pc >= _code_size)
-            return 0;
-
-        if (determine_jumps)
-            _state.jumps.insert(_state.pc);
-
-        int8_t op = _code[_state.pc];
-
-        if (op && disassemble && !determine_jumps) {
-            cout << hex << setw(8) << setfill('0') <<_state.pc;
-            if (_state.pc == _state.opc)
-                cout << "* ";
-            else
-                cout << "  ";
-        }
-
-        if (op == at_op_code_NOP) {
-            if (disassemble) {
-                if (!determine_jumps)
-                    cout << "NOP\n";
-                while (true) {
-                    ++rc;
-                    if (_state.pc + rc >= _code_size || _code[_state.pc + rc] != at_op_code_NOP)
-                        break;
-                }
-            }
-            else
-                while (true) {
-                    ++rc;
-                    ++_state.pc;
-                    if (_state.pc >= _code_size || _code[_state.pc] != at_op_code_NOP)
-                        break;
-                }
-        }
-        else if (op == at_op_code_SET_VAL) {
-            int32_t addr;
-            int64_t val;
-            rc = get_addr_val(addr, val);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int32_t) + sizeof(int64_t);
-
-                if (disassemble) {
-                    if (!determine_jumps)
-                        cout << "SET @" << hex << setw(8) << setfill('0')
-                                << addr << " #" << setw(16) << setfill('0') << val << '\n';
-                }
-                else {
-                   _state.pc += rc;
-                    *(int64_t * )(_data + (addr * 8)) = val;
-                }
+    if (op == at_op_code_NOP) {
+        if (disassemble) {
+            if (!determine_jumps)
+                cout << "NOP\n";
+            while (true) {
+                ++rc;
+                if (_state.pc + rc >= _code_size || _code[_state.pc + rc] != at_op_code_NOP)
+                    break;
             }
         }
-        else if (op == at_op_code_SET_DAT) {
-            int32_t addr1, addr2;
-            rc = get_addrs(addr1, addr2);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int32_t) + sizeof(int32_t);
-
-                if (disassemble) {
-                    if (!determine_jumps)
-                        cout << "SET @" << hex << setw(8) << setfill('0')
-                                << addr1 << " $" << setw(8) << setfill('0') << addr2 << '\n';
-                }
-                else {
-                   _state.pc += rc;
-                    *(int64_t * )(_data + (addr1 * 8)) = *(int64_t * )(_data + (addr2 * 8));
-                }
+        else
+            while (true) {
+                ++rc;
+                ++_state.pc;
+                if (_state.pc >= _code_size || _code[_state.pc] != at_op_code_NOP)
+                    break;
             }
-        }
-        else if (op == at_op_code_CLR_DAT) {
-            int32_t addr;
-            rc = get_addr(addr);
+    }
+    else if (op == at_op_code_SET_VAL) {
+        int32_t addr;
+        int64_t val;
+        rc = get_addr_val(addr, val);
 
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int32_t);
-
-                if (disassemble) {
-                    if (!determine_jumps)
-                        cout << "CLR @" << hex << setw(8) << setfill('0') << addr << '\n';
-                }
-                else {
-                   _state.pc += rc;
-                    *(int64_t * )(_data + (addr * 8)) = 0;
-                }
-            }
-        }
-        else if (op == at_op_code_INC_DAT || op == at_op_code_DEC_DAT || op == at_op_code_NOT_DAT) {
-            int32_t addr;
-            rc = get_addr(addr);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int32_t);
-
-                if (disassemble) {
-                    if (!determine_jumps) {
-                        if (op == at_op_code_INC_DAT)
-                            cout << "INC @";
-                        else if (op == at_op_code_DEC_DAT)
-                            cout << "DEC @";
-                        else
-                            cout << "NOT @";
-
-                        cout << hex << setw(8) << setfill('0') << addr << '\n';
-                    }
-                }
-                else {
-                   _state.pc += rc;
-
-                    if (op == at_op_code_INC_DAT)
-                        ++*(int64_t * )(_data + (addr * 8));
-                    else if (op == at_op_code_DEC_DAT)
-                        --*(int64_t * )(_data + (addr * 8));
-                    else
-                        *(int64_t * )(_data + (addr * 8)) = ~*(int64_t * )(_data + (addr * 8));
-                }
-            }
-        }
-        else if (op == at_op_code_ADD_DAT || op == at_op_code_SUB_DAT
-                || op == at_op_code_MUL_DAT || op == at_op_code_DIV_DAT) {
-            int32_t addr1, addr2;
-            rc = get_addrs(addr1, addr2);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int32_t) + sizeof(int32_t);
-
-                if (disassemble) {
-                    if (!determine_jumps) {
-                        if (op == at_op_code_ADD_DAT)
-                            cout << "ADD @";
-                        else if (op == at_op_code_SUB_DAT)
-                            cout << "SUB @";
-                        else if (op == at_op_code_MUL_DAT)
-                            cout << "MUL @";
-                        else
-                            cout << "DIV @";
-
-                        cout << hex << setw(8) << setfill('0')
-                                << addr1 << " $" << setw(8) << setfill('0') << addr2 << '\n';
-                    }
-                }
-                else {
-                    int64_t val = *(int64_t * )(_data + (addr2 * 8));
-
-                    if (op == at_op_code_DIV_DAT && val == 0)
-                        rc = -2;
-                    else {
-                       _state.pc += rc;
-
-                        if (op == at_op_code_ADD_DAT)
-                            *(int64_t * )(_data + (addr1 * 8)) += *(int64_t * )(_data + (addr2 * 8));
-                        else if (op == at_op_code_SUB_DAT)
-                            *(int64_t * )(_data + (addr1 * 8)) -= *(int64_t * )(_data + (addr2 * 8));
-                        else if (op == at_op_code_MUL_DAT)
-                            *(int64_t * )(_data + (addr1 * 8)) *= *(int64_t * )(_data + (addr2 * 8));
-                        else
-                            *(int64_t * )(_data + (addr1 * 8)) /= *(int64_t * )(_data + (addr2 * 8));
-                    }
-                }
-            }
-        }
-        else if (op == at_op_code_BOR_DAT
-                || op == at_op_code_AND_DAT || op == at_op_code_XOR_DAT) {
-            int32_t addr1, addr2;
-            rc = get_addrs(addr1, addr2);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int32_t) + sizeof(int32_t);
-
-                if (disassemble) {
-                    if (!determine_jumps) {
-                        if (op == at_op_code_BOR_DAT)
-                            cout << "BOR @";
-                        else if (op == at_op_code_AND_DAT)
-                            cout << "AND @";
-                        else
-                            cout << "XOR @";
-
-                        cout << hex << setw(8) << setfill('0')
-                                << addr1 << " $" << setw(16) << setfill('0') << addr2 << '\n';
-                    }
-                }
-                else {
-                   _state.pc += rc;
-                    int64_t val = *(int64_t * )(_data + (addr2 * 8));
-
-                    if (op == at_op_code_BOR_DAT)
-                        *(int64_t * )(_data + (addr1 * 8)) |= val;
-                    else if (op == at_op_code_AND_DAT)
-                        *(int64_t * )(_data + (addr1 * 8)) &= val;
-                    else
-                        *(int64_t * )(_data + (addr1 * 8)) ^= val;
-                }
-            }
-        }
-        else if (op == at_op_code_SET_IND) {
-            int32_t addr1, addr2;
-            rc = get_addrs(addr1, addr2);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int32_t) + sizeof(int32_t);
-
-                if (disassemble) {
-                    if (!determine_jumps)
-                        cout << "SET @" << hex << setw(8) << setfill('0')
-                                << addr1 << " $($" << setw(8) << setfill('0') << addr2 << ")\n";
-                }
-                else {
-                    int64_t addr = *(int64_t * )(_data + (addr2 * 8));
-
-                    if (addr < 0 || (addr * 8) < 0 || (addr * 8) + (int32_t)sizeof(int64_t) > _data_size )
-                    rc = -1;
-                    else
-                    {
-                       _state.pc += rc;
-                        *(int64_t * )(_data + (addr1 * 8)) = *(int64_t * )(_data + (addr * 8));
-                    }
-                }
-            }
-        }
-        else if (op == at_op_code_SET_IDX) {
-            int32_t addr1, addr2;
-            rc = get_addrs(addr1, addr2);
-
-            int32_t size = sizeof(int32_t) + sizeof(int32_t);
-
-            if (rc == 0 || disassemble) {
-                int32_t addr3;
-                rc = get_addr(addr3);
-
-                if (rc == 0 || disassemble) {
-                    rc = 1 + size + sizeof(int32_t);
-
-                    if (disassemble) {
-                        if (!determine_jumps)
-                            cout << "SET @" << hex << setw(8) << setfill('0')
-                                    << addr1 << " $($" << setw(8) << setfill('0') << addr2
-                                    << "+$" << setw(8) << setfill('0') << addr3 << ")\n";
-                    }
-                    else {
-                        int64_t base = *(int64_t * )(_data + (addr2 * 8));
-                        int64_t offs = *(int64_t * )(_data + (addr3 * 8));
-
-                        int64_t addr = base + offs;
-
-                        if (addr < 0 || (addr * 8) < 0 || (addr * 8) + (int32_t)sizeof(int64_t) > _data_size )
-                        rc = -1;
-                        else
-                        {
-                           _state.pc += rc;
-                            *(int64_t * )(_data + (addr1 * 8)) = *(int64_t * )(_data + (addr * 8));
-                        }
-                    }
-                }
-            }
-        }
-        else if (op == at_op_code_PSH_DAT || op == at_op_code_POP_DAT) {
-            int32_t addr;
-            rc = get_addr(addr);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int32_t);
-
-                if (disassemble) {
-                    if (!determine_jumps) {
-                        if (op == at_op_code_PSH_DAT)
-                            cout << "PSH $";
-                        else
-                            cout << "POP @";
-
-                        cout << hex << setw(8) << setfill('0') << addr << '\n';
-                    }
-                }
-                else if ((op == at_op_code_PSH_DAT && _state.us == (_user_stack_size / 8))
-                        || (op == at_op_code_POP_DAT && _state.us == 0))
-                    rc = -1;
-                else {
-                   _state.pc += rc;
-                    if (op == at_op_code_PSH_DAT)
-                        *(int64_t * )(_data + _data_size + _call_stack_size + _user_stack_size
-                                - (++_state.us * 8)) = *(int64_t * )(_data + (addr * 8));
-                    else
-                        *(int64_t * )(_data + (addr * 8))
-                                = *(int64_t * )(_data + _data_size + _call_stack_size + _user_stack_size - (_state.us-- * 8));
-                }
-            }
-        }
-        else if (op == at_op_code_JMP_SUB) {
-            int32_t addr;
-            rc = get_addr(addr, true);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int32_t);
-
-                if (disassemble) {
-                    if (!determine_jumps)
-                        cout << "JSR :" << hex << setw(8) << setfill('0') << addr << '\n';
-                }
-                else {
-                    if (_state.cs == (_call_stack_size / 8))
-                        rc = -1;
-                    else if (_state.jumps.count(addr)) {
-                        *(int64_t * )(_data + _data_size + _call_stack_size - (++_state.cs * 8)) =_state.pc + rc;
-                       _state.pc = addr;
-                    }
-                    else
-                        rc = -2;
-                }
-            }
-        }
-        else if (op == at_op_code_RET_SUB) {
-            rc = 1;
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int32_t) + sizeof(int64_t);
 
             if (disassemble) {
                 if (!determine_jumps)
-                    cout << "RET\n";
+                    cout << "SET @" << hex << setw(8) << setfill('0')
+                            << addr << " #" << setw(16) << setfill('0') << val << '\n';
             }
             else {
-                if (_state.cs == 0)
-                    rc = -1;
-                else {
-                    int64_t val = *(int64_t * )(_data + _data_size + _call_stack_size - (_state.cs-- * 8));
-                    int32_t addr = (int32_t) val;
-                    if (_state.jumps.count(addr))
-                       _state.pc = addr;
+                _state.pc += rc;
+                *(int64_t *) (_data + (addr * 8)) = val;
+            }
+        }
+    }
+    else if (op == at_op_code_SET_DAT) {
+        int32_t addr1, addr2;
+        rc = get_addrs(addr1, addr2);
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int32_t) + sizeof(int32_t);
+
+            if (disassemble) {
+                if (!determine_jumps)
+                    cout << "SET @" << hex << setw(8) << setfill('0')
+                            << addr1 << " $" << setw(8) << setfill('0') << addr2 << '\n';
+            }
+            else {
+                _state.pc += rc;
+                *(int64_t *) (_data + (addr1 * 8)) = *(int64_t *) (_data + (addr2 * 8));
+            }
+        }
+    }
+    else if (op == at_op_code_CLR_DAT) {
+        int32_t addr;
+        rc = get_addr(addr);
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int32_t);
+
+            if (disassemble) {
+                if (!determine_jumps)
+                    cout << "CLR @" << hex << setw(8) << setfill('0') << addr << '\n';
+            }
+            else {
+                _state.pc += rc;
+                *(int64_t *) (_data + (addr * 8)) = 0;
+            }
+        }
+    }
+    else if (op == at_op_code_INC_DAT || op == at_op_code_DEC_DAT || op == at_op_code_NOT_DAT) {
+        int32_t addr;
+        rc = get_addr(addr);
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int32_t);
+
+            if (disassemble) {
+                if (!determine_jumps) {
+                    if (op == at_op_code_INC_DAT)
+                        cout << "INC @";
+                    else if (op == at_op_code_DEC_DAT)
+                        cout << "DEC @";
                     else
-                        rc = -2;
+                        cout << "NOT @";
+
+                    cout << hex << setw(8) << setfill('0') << addr << '\n';
+                }
+            }
+            else {
+                _state.pc += rc;
+
+                if (op == at_op_code_INC_DAT)
+                    ++*(int64_t *) (_data + (addr * 8));
+                else if (op == at_op_code_DEC_DAT)
+                    --*(int64_t *) (_data + (addr * 8));
+                else
+                    *(int64_t *) (_data + (addr * 8)) = ~*(int64_t *) (_data + (addr * 8));
+            }
+        }
+    }
+    else if (op == at_op_code_ADD_DAT || op == at_op_code_SUB_DAT
+            || op == at_op_code_MUL_DAT || op == at_op_code_DIV_DAT) {
+        int32_t addr1, addr2;
+        rc = get_addrs(addr1, addr2);
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int32_t) + sizeof(int32_t);
+
+            if (disassemble) {
+                if (!determine_jumps) {
+                    if (op == at_op_code_ADD_DAT)
+                        cout << "ADD @";
+                    else if (op == at_op_code_SUB_DAT)
+                        cout << "SUB @";
+                    else if (op == at_op_code_MUL_DAT)
+                        cout << "MUL @";
+                    else
+                        cout << "DIV @";
+
+                    cout << hex << setw(8) << setfill('0')
+                            << addr1 << " $" << setw(8) << setfill('0') << addr2 << '\n';
+                }
+            }
+            else {
+                int64_t val = *(int64_t *) (_data + (addr2 * 8));
+
+                if (op == at_op_code_DIV_DAT && val == 0)
+                    rc = -2;
+                else {
+                    _state.pc += rc;
+
+                    if (op == at_op_code_ADD_DAT)
+                        *(int64_t *) (_data + (addr1 * 8)) += *(int64_t *) (_data + (addr2 * 8));
+                    else if (op == at_op_code_SUB_DAT)
+                        *(int64_t *) (_data + (addr1 * 8)) -= *(int64_t *) (_data + (addr2 * 8));
+                    else if (op == at_op_code_MUL_DAT)
+                        *(int64_t *) (_data + (addr1 * 8)) *= *(int64_t *) (_data + (addr2 * 8));
+                    else
+                        *(int64_t *) (_data + (addr1 * 8)) /= *(int64_t *) (_data + (addr2 * 8));
                 }
             }
         }
-        else if (op == at_op_code_JMP_ADR) {
-            int32_t addr;
-            rc = get_addr(addr, true);
+    }
+    else if (op == at_op_code_BOR_DAT
+            || op == at_op_code_AND_DAT || op == at_op_code_XOR_DAT) {
+        int32_t addr1, addr2;
+        rc = get_addrs(addr1, addr2);
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int32_t) + sizeof(int32_t);
+
+            if (disassemble) {
+                if (!determine_jumps) {
+                    if (op == at_op_code_BOR_DAT)
+                        cout << "BOR @";
+                    else if (op == at_op_code_AND_DAT)
+                        cout << "AND @";
+                    else
+                        cout << "XOR @";
+
+                    cout << hex << setw(8) << setfill('0')
+                            << addr1 << " $" << setw(16) << setfill('0') << addr2 << '\n';
+                }
+            }
+            else {
+                _state.pc += rc;
+                int64_t val = *(int64_t *) (_data + (addr2 * 8));
+
+                if (op == at_op_code_BOR_DAT)
+                    *(int64_t *) (_data + (addr1 * 8)) |= val;
+                else if (op == at_op_code_AND_DAT)
+                    *(int64_t *) (_data + (addr1 * 8)) &= val;
+                else
+                    *(int64_t *) (_data + (addr1 * 8)) ^= val;
+            }
+        }
+    }
+    else if (op == at_op_code_SET_IND) {
+        int32_t addr1, addr2;
+        rc = get_addrs(addr1, addr2);
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int32_t) + sizeof(int32_t);
+
+            if (disassemble) {
+                if (!determine_jumps)
+                    cout << "SET @" << hex << setw(8) << setfill('0')
+                            << addr1 << " $($" << setw(8) << setfill('0') << addr2 << ")\n";
+            }
+            else {
+                int64_t addr = *(int64_t *) (_data + (addr2 * 8));
+
+                if (addr < 0 || (addr * 8) < 0 || (addr * 8) + (int32_t) sizeof(int64_t) > _data_size)
+                    rc = -1;
+                else {
+                    _state.pc += rc;
+                    *(int64_t *) (_data + (addr1 * 8)) = *(int64_t *) (_data + (addr * 8));
+                }
+            }
+        }
+    }
+    else if (op == at_op_code_SET_IDX) {
+        int32_t addr1, addr2;
+        rc = get_addrs(addr1, addr2);
+
+        int32_t size = sizeof(int32_t) + sizeof(int32_t);
+
+        if (rc == 0 || disassemble) {
+            int32_t addr3;
+            rc = get_addr(addr3);
 
             if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int32_t);
+                rc = 1 + size + sizeof(int32_t);
 
                 if (disassemble) {
                     if (!determine_jumps)
-                        cout << "JMP :" << hex << setw(8) << setfill('0') << addr << '\n';
+                        cout << "SET @" << hex << setw(8) << setfill('0')
+                                << addr1 << " $($" << setw(8) << setfill('0') << addr2
+                                << "+$" << setw(8) << setfill('0') << addr3 << ")\n";
                 }
-                else if (_state.jumps.count(addr))
-                   _state.pc = addr;
+                else {
+                    int64_t base = *(int64_t *) (_data + (addr2 * 8));
+                    int64_t offs = *(int64_t *) (_data + (addr3 * 8));
+
+                    int64_t addr = base + offs;
+
+                    if (addr < 0 || (addr * 8) < 0 || (addr * 8) + (int32_t) sizeof(int64_t) > _data_size)
+                        rc = -1;
+                    else {
+                        _state.pc += rc;
+                        *(int64_t *) (_data + (addr1 * 8)) = *(int64_t *) (_data + (addr * 8));
+                    }
+                }
+            }
+        }
+    }
+    else if (op == at_op_code_PSH_DAT || op == at_op_code_POP_DAT) {
+        int32_t addr;
+        rc = get_addr(addr);
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int32_t);
+
+            if (disassemble) {
+                if (!determine_jumps) {
+                    if (op == at_op_code_PSH_DAT)
+                        cout << "PSH $";
+                    else
+                        cout << "POP @";
+
+                    cout << hex << setw(8) << setfill('0') << addr << '\n';
+                }
+            }
+            else if ((op == at_op_code_PSH_DAT && _state.us == (_user_stack_size / 8))
+                    || (op == at_op_code_POP_DAT && _state.us == 0))
+                rc = -1;
+            else {
+                _state.pc += rc;
+                if (op == at_op_code_PSH_DAT)
+                    *(int64_t *) (_data + _data_size + _call_stack_size + _user_stack_size
+                            - (++_state.us * 8)) = *(int64_t *) (_data + (addr * 8));
+                else
+                    *(int64_t *) (_data + (addr * 8))
+                            = *(int64_t *) (_data + _data_size + _call_stack_size + _user_stack_size - (_state.us-- * 8));
+            }
+        }
+    }
+    else if (op == at_op_code_JMP_SUB) {
+        int32_t addr;
+        rc = get_addr(addr, true);
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int32_t);
+
+            if (disassemble) {
+                if (!determine_jumps)
+                    cout << "JSR :" << hex << setw(8) << setfill('0') << addr << '\n';
+            }
+            else {
+                if (_state.cs == (_call_stack_size / 8))
+                    rc = -1;
+                else if (_state.jumps.count(addr)) {
+                    *(int64_t *) (_data + _data_size + _call_stack_size - (++_state.cs * 8)) = _state.pc + rc;
+                    _state.pc = addr;
+                }
                 else
                     rc = -2;
             }
         }
-        else if (op == at_op_code_BZR_DAT || op == at_op_code_BNZ_DAT) {
-            int8_t off;
-            int32_t addr;
-            rc = get_addr_off(addr, off);
+    }
+    else if (op == at_op_code_RET_SUB) {
+        rc = 1;
 
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int32_t) + sizeof(int8_t);
-
-                if (disassemble) {
-                    if (!determine_jumps) {
-                        if (op == at_op_code_BZR_DAT)
-                            cout << "BZR $";
-                        else
-                            cout << "BNZ $";
-
-                        cout << hex << setw(8) << setfill('0')
-                                << addr << " :" << setw(8) << setfill('0') << (_state.pc + off) << '\n';
-                    }
-                }
-                else {
-                    int64_t val = *(int64_t * )(_data + (addr * 8));
-
-                    if ((op == at_op_code_BZR_DAT && val == 0)
-                            || (op == at_op_code_BNZ_DAT && val != 0)) {
-                        if (_state.jumps.count(_state.pc + off))
-                           _state.pc += off;
-                        else
-                            rc = -2;
-                    }
-                    else
-                       _state.pc += rc;
-                }
-            }
+        if (disassemble) {
+            if (!determine_jumps)
+                cout << "RET\n";
         }
-        else if (op == at_op_code_BGT_DAT || op == at_op_code_BLT_DAT
-                || op == at_op_code_BGE_DAT || op == at_op_code_BLE_DAT
-                || op == at_op_code_BEQ_DAT || op == at_op_code_BNE_DAT) {
-            int8_t off;
-            int32_t addr1, addr2;
-            rc = get_addrs_off(addr1, addr2, off);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int32_t) + sizeof(int32_t) + sizeof(int8_t);
-
-                if (disassemble) {
-                    if (!determine_jumps) {
-                        if (op == at_op_code_BGT_DAT)
-                            cout << "BGT $";
-                        else if (op == at_op_code_BLT_DAT)
-                            cout << "BLT $";
-                        else if (op == at_op_code_BGE_DAT)
-                            cout << "BGE $";
-                        else if (op == at_op_code_BLE_DAT)
-                            cout << "BLE $";
-                        else if (op == at_op_code_BEQ_DAT)
-                            cout << "BEQ $";
-                        else
-                            cout << "BNE $";
-
-                        cout << hex << setw(8) << setfill('0')
-                                << addr1 << " $" << setw(8) << setfill('0')
-                                << addr2 << " :" << setw(8) << setfill('0') << (_state.pc + off) << '\n';
-                    }
-                }
-                else {
-                    int64_t val1 = *(int64_t * )(_data + (addr1 * 8));
-                    int64_t val2 = *(int64_t * )(_data + (addr2 * 8));
-
-                    if ((op == at_op_code_BGT_DAT && val1 > val2)
-                            || (op == at_op_code_BLT_DAT && val1 < val2)
-                            || (op == at_op_code_BGE_DAT && val1 >= val2)
-                            || (op == at_op_code_BLE_DAT && val1 <= val2)
-                            || (op == at_op_code_BEQ_DAT && val1 == val2)
-                            || (op == at_op_code_BNE_DAT && val1 != val2)) {
-                        if (_state.jumps.count(_state.pc + off))
-                           _state.pc += off;
-                        else
-                            rc = -2;
-                    }
-                    else
-                       _state.pc += rc;
-                }
-            }
-        }
-        else if (op == at_op_code_SLP_DAT) {
-            int32_t addr;
-            rc = get_addr(addr, true);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int32_t);
-
-                if (disassemble) {
-                    if (!determine_jumps)
-                        cout << "SLP @" << hex << setw(8) << setfill('0') << addr << '\n';
-                }
-                else {
-                    // ToDo: NOTE: The "sleep_until" state value would be set to the current block + $addr.
-                   _state.pc += rc;
-                }
-            }
-        }
-        else if (op == at_op_code_FIZ_DAT || op == at_op_code_STZ_DAT) {
-            int32_t addr;
-            rc = get_addr(addr);
-
-            if (rc == 0 || disassemble) {
-                if (disassemble) {
-                    rc = 1 + sizeof(int32_t);
-
-                    if (!determine_jumps) {
-                        if (op == at_op_code_FIZ_DAT)
-                            cout << "FIZ @";
-                        else
-                            cout << "STZ @";
-
-                        cout << hex << setw(8) << setfill('0') << addr << '\n';
-                    }
-                }
-                else {
-                    if (*(int64_t * )(_data + (addr * 8)) == 0) {
-                        if (op == at_op_code_STZ_DAT)
-                            //_state.stopped = true;
-                            _state.flags |= flag_stopped;
-                        else {
-                            _state.pc =_state.pcs;
-                            //_state.finished = true;
-                            _state.flags |= flag_terminated;
-                        }
-                    }
-                    else {
-                        rc = 1 + sizeof(int32_t);
-                       _state.pc += rc;
-                    }
-                }
-            }
-        }
-        else if (op == at_op_code_FIN_IMD || op == at_op_code_STP_IMD) {
-            if (disassemble) {
-                rc = 1;
-
-                if (!determine_jumps) {
-                    if (op == at_op_code_FIN_IMD)
-                        cout << "FIN\n";
-                    else
-                        cout << "STP\n";
-                }
-            }
-            else if (op == at_op_code_STP_IMD)
-                //_state.stopped = true;
-                _state.flags |= flag_stopped;
+        else {
+            if (_state.cs == 0)
+                rc = -1;
             else {
-                _state.pc =_state.pcs;
-                //_state.finished = true;
-                _state.flags |= flag_terminated;
+                int64_t val = *(int64_t *) (_data + _data_size + _call_stack_size - (_state.cs-- * 8));
+                int32_t addr = (int32_t) val;
+                if (_state.jumps.count(addr))
+                    _state.pc = addr;
+                else
+                    rc = -2;
             }
         }
-        else if (op == at_op_code_SET_PCS) {
-            rc = 1;
+    }
+    else if (op == at_op_code_JMP_ADR) {
+        int32_t addr;
+        rc = get_addr(addr, true);
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int32_t);
 
             if (disassemble) {
                 if (!determine_jumps)
-                    cout << "PCS\n";
+                    cout << "JMP :" << hex << setw(8) << setfill('0') << addr << '\n';
             }
-            else {
-               _state.pc += rc;
-               _state.pcs =_state.pc;
-            }
-        }
-        else if (op == at_op_code_EXT_FUN) {
-            int16_t fun;
-            rc = get_fun(fun);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int16_t);
-
-                if (disassemble) {
-                    if (!determine_jumps) {
-                        if (fun < 0x100)
-                            cout << "FUN " << dec << fun << "\n";
-                        else
-                            cout << "FUN 0x" << hex << setw(4) << setfill('0') << fun << "\n";
-                    }
-                }
-                else {
-                    _state.pc += rc;
-                    func(fun);
-                }
-            }
-        }
-        else if (op == at_op_code_EXT_FUN_DAT) {
-            int16_t fun;
-            int32_t addr;
-            rc = get_fun_addr(fun, addr);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int16_t) + sizeof(int32_t);
-
-                if (disassemble) {
-                    if (!determine_jumps) {
-                        if (fun < 0x100)
-                            cout << "FUN " << dec << fun << " $" << hex << setw(8) << setfill('0') << addr << "\n";
-                        else
-                            cout << "FUN 0x" << hex << setw(4) << setfill('0') << fun
-                                    << " $" << hex << setw(8) << setfill('0') << addr << "\n";
-                    }
-                }
-                else {
-                    _state.pc += rc;
-                    int64_t val = *(int64_t * )(_data + (addr * 8));
-
-                    func1(fun, val);
-                }
-            }
-        }
-        else if (op == at_op_code_EXT_FUN_DAT_2) {
-            int16_t fun;
-            int32_t addr1, addr2;
-            rc = get_fun_addrs(fun, addr1, addr2);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int16_t) + sizeof(int32_t) + sizeof(int32_t);
-
-                if (disassemble) {
-                    if (!determine_jumps) {
-                        if (fun < 0x100)
-                            cout << "FUN " << dec << fun << " $" << hex << setw(8)
-                                    << setfill('0') << addr1 << " $" << setw(8) << setfill('0') << addr2 << "\n";
-                        else
-                            cout << "FUN 0x" << hex << setw(4) << setfill('0') << fun << " $" << hex << setw(8)
-                                    << setfill('0') << addr1 << " $" << setw(8) << setfill('0') << addr2 << "\n";
-                    }
-                }
-                else {
-                   _state.pc += rc;
-                    int64_t val1 = *(int64_t * )(_data + (addr1 * 8));
-                    int64_t val2 = *(int64_t * )(_data + (addr2 * 8));
-
-                    func2(fun, val1, val2);
-                }
-            }
-        }
-        else if (op == at_op_code_EXT_FUN_RET) {
-            int16_t fun;
-            int32_t addr;
-            rc = get_fun_addr(fun, addr);
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + sizeof(int16_t) + sizeof(int32_t);
-
-                if (disassemble) {
-                    if (!determine_jumps) {
-                        if (fun < 0x100)
-                            cout << "FUN @" << hex << setw(8) << setfill('0') << addr << ' ' << dec << fun << '\n';
-                        else
-                            cout << "FUN @" << hex << setw(8) << setfill('0') << addr
-                                    << " 0x" << hex << setw(4) << setfill('0') << fun << '\n';
-                    }
-                }
-                else {
-                   _state.pc += rc;
-                    *(int64_t * )(_data + (addr * 8)) = func(fun);
-                }
-            }
-        }
-        else if (op == at_op_code_EXT_FUN_RET_DAT || op == at_op_code_EXT_FUN_RET_DAT_2) {
-            int16_t fun;
-            int32_t addr1, addr2;
-            rc = get_fun_addrs(fun, addr1, addr2);
-
-            int32_t size = sizeof(int16_t) + sizeof(int32_t) + sizeof(int32_t); // ToDo: Verify these sizes match
-
-            int32_t addr3;
-            if ((rc == 0 || disassemble) && op == at_op_code_EXT_FUN_RET_DAT_2)
-                //rc = get_addr(_code + size, _code_size, _data_size, state, addr3);
-                rc = get_addr(addr3); // ToDo: Verify removal of _code+size does not break this
-
-            if (rc == 0 || disassemble) {
-                rc = 1 + size + (op == at_op_code_EXT_FUN_RET_DAT_2 ? sizeof(int32_t) : 0);
-
-                if (disassemble) {
-                    if (!determine_jumps) {
-                        if (fun < 0x100)
-                            cout << "FUN @" << hex << setw(8) << setfill('0') << addr1
-                                    << ' ' << dec << fun << " $" << setw(8) << setfill('0') << addr2;
-                        else
-                            cout << "FUN @" << hex << setw(8) << setfill('0') << addr1
-                                    << " 0x" << hex << setw(4) << setfill('0') << fun << " $" << setw(8) << setfill('0') << addr2;
-
-                        if (op == at_op_code_EXT_FUN_RET_DAT_2)
-                            cout << " $" << setw(8) << setfill('0') << addr3;
-
-                        cout << "\n";
-                    }
-                }
-                else {
-                   _state.pc += rc;
-                    int64_t val = *(int64_t * )(_data + (addr2 * 8));
-
-                    if (op != at_op_code_EXT_FUN_RET_DAT_2)
-                        *(int64_t * )(_data + (addr1 * 8)) = func1(fun, val);
-                    else {
-                        int64_t val2 = *(int64_t * )(_data + (addr3 * 8));
-                        *(int64_t * )(_data + (addr1 * 8)) = func2(fun, val, val2);
-                    }
-                }
-            }
-        }
-        else {
-            if (!disassemble)
+            else if (_state.jumps.count(addr))
+                _state.pc = addr;
+            else
                 rc = -2;
         }
-
-        if (rc == -1 && disassemble && !determine_jumps)
-            cout << "\n(overflow)\n";
-
-        if (rc == -2 && disassemble && !determine_jumps)
-            cout << "\n(invalid op)\n";
-
-        if (rc >= 0)
-            ++_state.steps;
-
-        return rc;
     }
+    else if (op == at_op_code_BZR_DAT || op == at_op_code_BNZ_DAT) {
+        int8_t off;
+        int32_t addr;
+        rc = get_addr_off(addr, off);
 
-    void dump_state()
-    {
-        cout << "pc: " << hex << setw(8) << setfill('0') <<_state.pc << '\n';
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int32_t) + sizeof(int8_t);
 
-        cout << "cs: " << dec << _state.cs << '\n';
-        cout << "us: " << dec << _state.us << '\n';
+            if (disassemble) {
+                if (!determine_jumps) {
+                    if (op == at_op_code_BZR_DAT)
+                        cout << "BZR $";
+                    else
+                        cout << "BNZ $";
 
-        cout << "pcs: " << hex << setw(8) << setfill('0') <<_state.pcs << '\n';
-
-        cout << "steps: " << dec << _state.steps << '\n';
-    }
-
-    void dump_bytes(int8_t *p_bytes, int num)
-    {
-        for (int i = 0; i < num; i += 16) {
-            cout << hex << setw(8) << setfill('0') << i << ' ';
-
-            for (int j = 0; j < 16; j++) {
-                int val = (unsigned char) p_bytes[i + j];
-
-                cout << ' ' << hex << setw(2) << setfill('0') << val;
+                    cout << hex << setw(8) << setfill('0')
+                            << addr << " :" << setw(8) << setfill('0') << (_state.pc + off) << '\n';
+                }
             }
+            else {
+                int64_t val = *(int64_t *) (_data + (addr * 8));
 
-            cout << '\n';
+                if ((op == at_op_code_BZR_DAT && val == 0)
+                        || (op == at_op_code_BNZ_DAT && val != 0)) {
+                    if (_state.jumps.count(_state.pc + off))
+                        _state.pc += off;
+                    else
+                        rc = -2;
+                }
+                else
+                    _state.pc += rc;
+            }
         }
     }
+    else if (op == at_op_code_BGT_DAT || op == at_op_code_BLT_DAT
+            || op == at_op_code_BGE_DAT || op == at_op_code_BLE_DAT
+            || op == at_op_code_BEQ_DAT || op == at_op_code_BNE_DAT) {
+        int8_t off;
+        int32_t addr1, addr2;
+        rc = get_addrs_off(addr1, addr2, off);
 
-    void list_code(bool determine_jumps = false)
-    {
-        int32_t opc =_state.pc;
-        int32_t osteps = _state.steps;
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int32_t) + sizeof(int32_t) + sizeof(int8_t);
 
-        _state.pc = 0;
-        _state.opc = opc;
+            if (disassemble) {
+                if (!determine_jumps) {
+                    if (op == at_op_code_BGT_DAT)
+                        cout << "BGT $";
+                    else if (op == at_op_code_BLT_DAT)
+                        cout << "BLT $";
+                    else if (op == at_op_code_BGE_DAT)
+                        cout << "BGE $";
+                    else if (op == at_op_code_BLE_DAT)
+                        cout << "BLE $";
+                    else if (op == at_op_code_BEQ_DAT)
+                        cout << "BEQ $";
+                    else
+                        cout << "BNE $";
 
-        while (true) {
-            int rc = process_op(true, determine_jumps);
+                    cout << hex << setw(8) << setfill('0')
+                            << addr1 << " $" << setw(8) << setfill('0')
+                            << addr2 << " :" << setw(8) << setfill('0') << (_state.pc + off) << '\n';
+                }
+            }
+            else {
+                int64_t val1 = *(int64_t *) (_data + (addr1 * 8));
+                int64_t val2 = *(int64_t *) (_data + (addr2 * 8));
 
-            if (rc <= 0)
-                break;
+                if ((op == at_op_code_BGT_DAT && val1 > val2)
+                        || (op == at_op_code_BLT_DAT && val1 < val2)
+                        || (op == at_op_code_BGE_DAT && val1 >= val2)
+                        || (op == at_op_code_BLE_DAT && val1 <= val2)
+                        || (op == at_op_code_BEQ_DAT && val1 == val2)
+                        || (op == at_op_code_BNE_DAT && val1 != val2)) {
+                    if (_state.jumps.count(_state.pc + off))
+                        _state.pc += off;
+                    else
+                        rc = -2;
+                }
+                else
+                    _state.pc += rc;
+            }
+        }
+    }
+    else if (op == at_op_code_SLP_DAT) {
+        int32_t addr;
+        rc = get_addr(addr, true);
 
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int32_t);
+
+            if (disassemble) {
+                if (!determine_jumps)
+                    cout << "SLP @" << hex << setw(8) << setfill('0') << addr << '\n';
+            }
+            else {
+                // ToDo: NOTE: The "sleep_until" state value would be set to the current block + $addr.
+                _state.pc += rc;
+            }
+        }
+    }
+    else if (op == at_op_code_FIZ_DAT || op == at_op_code_STZ_DAT) {
+        int32_t addr;
+        rc = get_addr(addr);
+
+        if (rc == 0 || disassemble) {
+            if (disassemble) {
+                rc = 1 + sizeof(int32_t);
+
+                if (!determine_jumps) {
+                    if (op == at_op_code_FIZ_DAT)
+                        cout << "FIZ @";
+                    else
+                        cout << "STZ @";
+
+                    cout << hex << setw(8) << setfill('0') << addr << '\n';
+                }
+            }
+            else {
+                if (*(int64_t *) (_data + (addr * 8)) == 0) {
+                    if (op == at_op_code_STZ_DAT)
+                        //_state.stopped = true;
+                        _state.flags |= flag_stopped;
+                    else {
+                        _state.pc = _state.pcs;
+                        //_state.finished = true;
+                        _state.flags |= flag_terminated;
+                    }
+                }
+                else {
+                    rc = 1 + sizeof(int32_t);
+                    _state.pc += rc;
+                }
+            }
+        }
+    }
+    else if (op == at_op_code_FIN_IMD || op == at_op_code_STP_IMD) {
+        if (disassemble) {
+            rc = 1;
+
+            if (!determine_jumps) {
+                if (op == at_op_code_FIN_IMD)
+                    cout << "FIN\n";
+                else
+                    cout << "STP\n";
+            }
+        }
+        else if (op == at_op_code_STP_IMD)
+            //_state.stopped = true;
+            _state.flags |= flag_stopped;
+        else {
+            _state.pc = _state.pcs;
+            //_state.finished = true;
+            _state.flags |= flag_terminated;
+        }
+    }
+    else if (op == at_op_code_SET_PCS) {
+        rc = 1;
+
+        if (disassemble) {
+            if (!determine_jumps)
+                cout << "PCS\n";
+        }
+        else {
             _state.pc += rc;
+            _state.pcs = _state.pc;
+        }
+    }
+    else if (op == at_op_code_EXT_FUN) {
+        int16_t fun;
+        rc = get_fun(fun);
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int16_t);
+
+            if (disassemble) {
+                if (!determine_jumps) {
+                    if (fun < 0x100)
+                        cout << "FUN " << dec << fun << "\n";
+                    else
+                        cout << "FUN 0x" << hex << setw(4) << setfill('0') << fun << "\n";
+                }
+            }
+            else {
+                _state.pc += rc;
+                // ToDo: api call
+                //func(fun);
+            }
+        }
+    }
+    else if (op == at_op_code_EXT_FUN_DAT) {
+        int16_t fun;
+        int32_t addr;
+        rc = get_fun_addr(fun, addr);
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int16_t) + sizeof(int32_t);
+
+            if (disassemble) {
+                if (!determine_jumps) {
+                    if (fun < 0x100)
+                        cout << "FUN " << dec << fun << " $" << hex << setw(8) << setfill('0') << addr << "\n";
+                    else
+                        cout << "FUN 0x" << hex << setw(4) << setfill('0') << fun
+                                << " $" << hex << setw(8) << setfill('0') << addr << "\n";
+                }
+            }
+            else {
+                _state.pc += rc;
+                int64_t val = *(int64_t *) (_data + (addr * 8));
+                // ToDo: API call
+                //func1(fun, val);
+            }
+        }
+    }
+    else if (op == at_op_code_EXT_FUN_DAT_2) {
+        int16_t fun;
+        int32_t addr1, addr2;
+        rc = get_fun_addrs(fun, addr1, addr2);
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int16_t) + sizeof(int32_t) + sizeof(int32_t);
+
+            if (disassemble) {
+                if (!determine_jumps) {
+                    if (fun < 0x100)
+                        cout << "FUN " << dec << fun << " $" << hex << setw(8)
+                                << setfill('0') << addr1 << " $" << setw(8) << setfill('0') << addr2 << "\n";
+                    else
+                        cout << "FUN 0x" << hex << setw(4) << setfill('0') << fun << " $" << hex << setw(8)
+                                << setfill('0') << addr1 << " $" << setw(8) << setfill('0') << addr2 << "\n";
+                }
+            }
+            else {
+                _state.pc += rc;
+                int64_t val1 = *(int64_t *) (_data + (addr1 * 8));
+                int64_t val2 = *(int64_t *) (_data + (addr2 * 8));
+
+                // ToDo: API call
+                //func2(fun, val1, val2);
+            }
+        }
+    }
+    else if (op == at_op_code_EXT_FUN_RET) {
+        int16_t fun;
+        int32_t addr;
+        rc = get_fun_addr(fun, addr);
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + sizeof(int16_t) + sizeof(int32_t);
+
+            if (disassemble) {
+                if (!determine_jumps) {
+                    if (fun < 0x100)
+                        cout << "FUN @" << hex << setw(8) << setfill('0') << addr << ' ' << dec << fun << '\n';
+                    else
+                        cout << "FUN @" << hex << setw(8) << setfill('0') << addr
+                                << " 0x" << hex << setw(4) << setfill('0') << fun << '\n';
+                }
+            }
+            else {
+                _state.pc += rc;
+                // ToDo: API call
+                //*(int64_t * )(_data + (addr * 8)) = func(fun);
+            }
+        }
+    }
+    else if (op == at_op_code_EXT_FUN_RET_DAT || op == at_op_code_EXT_FUN_RET_DAT_2) {
+        int16_t fun;
+        int32_t addr1, addr2;
+        rc = get_fun_addrs(fun, addr1, addr2);
+
+        int32_t size = sizeof(int16_t) + sizeof(int32_t) + sizeof(int32_t); // ToDo: Verify these sizes match
+
+        int32_t addr3;
+        if ((rc == 0 || disassemble) && op == at_op_code_EXT_FUN_RET_DAT_2)
+            //rc = get_addr(_code + size, _code_size, _data_size, state, addr3);
+            rc = get_addr(addr3); // ToDo: Verify removal of _code+size does not break this
+
+        if (rc == 0 || disassemble) {
+            rc = 1 + size + (op == at_op_code_EXT_FUN_RET_DAT_2 ? sizeof(int32_t) : 0);
+
+            if (disassemble) {
+                if (!determine_jumps) {
+                    if (fun < 0x100)
+                        cout << "FUN @" << hex << setw(8) << setfill('0') << addr1
+                                << ' ' << dec << fun << " $" << setw(8) << setfill('0') << addr2;
+                    else
+                        cout << "FUN @" << hex << setw(8) << setfill('0') << addr1
+                                << " 0x" << hex << setw(4) << setfill('0') << fun << " $" << setw(8) << setfill('0') << addr2;
+
+                    if (op == at_op_code_EXT_FUN_RET_DAT_2)
+                        cout << " $" << setw(8) << setfill('0') << addr3;
+
+                    cout << "\n";
+                }
+            }
+            else {
+                _state.pc += rc;
+                int64_t val = *(int64_t *) (_data + (addr2 * 8));
+
+                // ToDo: API call
+                //if (op != at_op_code_EXT_FUN_RET_DAT_2)
+                //    *(int64_t * )(_data + (addr1 * 8)) = func1(fun, val);
+                //else {
+                //    int64_t val2 = *(int64_t * )(_data + (addr3 * 8));
+                //    *(int64_t * )(_data + (addr1 * 8)) = func2(fun, val, val2);
+                //}
+            }
+        }
+    }
+    else {
+        if (!disassemble)
+            rc = -2;
+    }
+
+    if (rc == -1 && disassemble && !determine_jumps)
+        cout << "\n(overflow)\n";
+
+    if (rc == -2 && disassemble && !determine_jumps)
+        cout << "\n(invalid op)\n";
+
+    if (rc >= 0)
+        ++_state.steps;
+
+    return rc;
+}
+
+void AutomatedTransaction::dump_state() {
+    cout << "pc: " << hex << setw(8) << setfill('0') << _state.pc << '\n';
+
+    cout << "cs: " << dec << _state.cs << '\n';
+    cout << "us: " << dec << _state.us << '\n';
+
+    cout << "pcs: " << hex << setw(8) << setfill('0') << _state.pcs << '\n';
+
+    cout << "steps: " << dec << _state.steps << '\n';
+}
+
+void AutomatedTransaction::dump_bytes(int8_t *p_bytes, int num) {
+    for (int i = 0; i < num; i += 16) {
+        cout << hex << setw(8) << setfill('0') << i << ' ';
+
+        for (int j = 0; j < 16; j++) {
+            int val = (unsigned char) p_bytes[i + j];
+
+            cout << ' ' << hex << setw(2) << setfill('0') << val;
         }
 
-        _state.steps = osteps;
-       _state.pc = opc;
+        cout << '\n';
+    }
+}
+
+void AutomatedTransaction::list_code(bool determine_jumps = false) {
+    int32_t opc = _state.pc;
+    int32_t osteps = _state.steps;
+
+    _state.pc = 0;
+    _state.opc = opc;
+
+    while (true) {
+        int rc = process_op(true, determine_jumps);
+
+        if (rc <= 0)
+            break;
+
+        _state.pc += rc;
     }
 
-    void reset_machine()
-    {
-        _state.reset();
-        list_code(true);
+    _state.steps = osteps;
+    _state.pc = opc;
+}
 
-        memset(_data, 0, _data_size + _call_stack_size + _user_stack_size);
+void AutomatedTransaction::reset_machine() {
+    _state.reset();
+    list_code(true);
 
-        g_first_call = true;
+    memset(_data, 0, _data_size + _call_stack_size + _user_stack_size);
+}
 
-        for (map<int32_t, function_data>::iterator i = g_function_data.begin(); i != g_function_data.end(); ++i)
-            i->second.offset = 0;
-    }
+bool AutomatedTransaction::isFinished() {
+    return (_state.flags &= flag_terminated) != 0;
+}
 
-    bool isFinished(){
-        return _state.flags |= flag_terminated;
-    }
-    bool isStopped(){
-        return _state.flags |= flag_stopped;
-    }
-    bool isPaused(){
-        return _state.flags |= flag_paused;
-    }
-};
+bool AutomatedTransaction::isStopped() {
+    return (_state.flags &= flag_stopped) != 0;
+}
+
+bool AutomatedTransaction::isPaused() {
+    return (_state.flags &= flag_paused) != 0;
+}
 
 
 // The following is for debug/testing
-
+/*
 int main()
 {
     auto_ptr <int8_t> a_code(new int8_t[g_code_pages * c_code_page_bytes]);
@@ -1428,3 +1394,4 @@ int main()
             cout << "invalid command: " << cmd << endl;
     }
 }
+*/
